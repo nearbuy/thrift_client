@@ -25,6 +25,21 @@ module Greeter
       raise ::Thrift::ApplicationException.new(::Thrift::ApplicationException::MISSING_RESULT, 'greeting failed: unknown result')
     end
 
+    def delayed_greeting(name, sleep_seconds)
+      send_delayed_greeting(name, sleep_seconds)
+      return recv_delayed_greeting()
+    end
+
+    def send_delayed_greeting(name, sleep_seconds)
+      send_message('delayed_greeting', Delayed_greeting_args, :name => name, :sleep_seconds => sleep_seconds)
+    end
+
+    def recv_delayed_greeting()
+      result = receive_message(Delayed_greeting_result)
+      return result.success unless result.success.nil?
+      raise ::Thrift::ApplicationException.new(::Thrift::ApplicationException::MISSING_RESULT, 'delayed_greeting failed: unknown result')
+    end
+
     def yo(name)
       send_yo(name)
     end
@@ -42,6 +57,13 @@ module Greeter
       result = Greeting_result.new()
       result.success = @handler.greeting(args.name)
       write_result(result, oprot, 'greeting', seqid)
+    end
+
+    def process_delayed_greeting(seqid, iprot, oprot)
+      args = read_args(iprot, Delayed_greeting_args)
+      result = Delayed_greeting_result.new()
+      result.success = @handler.delayed_greeting(args.name, args.sleep_seconds)
+      write_result(result, oprot, 'delayed_greeting', seqid)
     end
 
     def process_yo(seqid, iprot, oprot)
@@ -71,6 +93,40 @@ module Greeter
   end
 
   class Greeting_result
+    include ::Thrift::Struct, ::Thrift::Struct_Union
+    SUCCESS = 0
+
+    FIELDS = {
+      SUCCESS => {:type => ::Thrift::Types::STRING, :name => 'success'}
+    }
+
+    def struct_fields; FIELDS; end
+
+    def validate
+    end
+
+    ::Thrift::Struct.generate_accessors self
+  end
+
+  class Delayed_greeting_args
+    include ::Thrift::Struct, ::Thrift::Struct_Union
+    NAME = 1
+    SLEEP_SECONDS = 2
+
+    FIELDS = {
+      NAME => {:type => ::Thrift::Types::STRING, :name => 'name'},
+      SLEEP_SECONDS => {:type => ::Thrift::Types::I32, :name => 'sleep_seconds'}
+    }
+
+    def struct_fields; FIELDS; end
+
+    def validate
+    end
+
+    ::Thrift::Struct.generate_accessors self
+  end
+
+  class Delayed_greeting_result
     include ::Thrift::Struct, ::Thrift::Struct_Union
     SUCCESS = 0
 

@@ -4,6 +4,11 @@ module Greeter
       "hello there #{name}!"
     end
 
+    def delayed_greeting(name, sleep_seconds)
+      sleep sleep_seconds
+      return greeting(name)
+    end
+
     def yo(name)
       #whee
     end
