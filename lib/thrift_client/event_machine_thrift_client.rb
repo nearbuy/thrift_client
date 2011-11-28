@@ -15,7 +15,10 @@ class EventMachineThriftClient < AbstractThriftClient
   def _handled_proxy(method_name, d, tries, *args)
     disconnect_on_max! if @options[:server_max_requests] && @request_count >= @options[:server_max_requests]
     exception_handler = proc do |err|
-      if err == :timeout || @options[:exception_classes].include?(err.class)
+      if err == :timeout
+        err = Thrift::TransportException.new(Thrift::TransportException::TIMED_OUT, "Connection timeout")
+      end
+      if @options[:exception_classes].include?(err.class)
         disconnect_on_error!
 
         tries -= 1
