@@ -155,7 +155,9 @@ class AbstractThriftClient
 
   def raise_wrapped_error(e)
     if @options[:wrapped_exception_classes].include?(e.class)
-      raise @client_class.const_get(e.class.to_s.split('::').last), e.message, e.backtrace
+      wrapped_e = @client_class.const_get(e.class.to_s.split('::').last).new(e.type, e.message)
+      wrapped_e.set_backtrace(e.backtrace)
+      raise wrapped_e
     else
       raise e
     end
