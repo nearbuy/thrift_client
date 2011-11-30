@@ -2,6 +2,11 @@ class EventMachineThriftClient < AbstractThriftClient
   # This class is works with the thrift core eventmachinetransport
   # not the other eventmachine class in thrift_client
 
+  def initialize(client_class, servers, options = {})
+    @error_count = 0
+    super
+  end
+
   def connect!
     @current_server = next_live_server
     host, port = @current_server.connection_string.split(':')
@@ -12,23 +17,32 @@ class EventMachineThriftClient < AbstractThriftClient
     @connection.callback(&@callbacks[:post_connect]) if @callbacks[:post_connect]
   end
 
+  private
+
+  def disconnect_on_error!
+    @error_count += 1
+    super
+  end
+
   def _handled_proxy(method_name, d, tries, *args)
     disconnect_on_max! if @options[:server_max_requests] && @request_count >= @options[:server_max_requests]
+    error_count = @error_count
     exception_handler = proc do |err|
       if err == :timeout
         err = Thrift::TransportException.new(Thrift::TransportException::TIMED_OUT, "Connection timeout")
       end
+
       if @options[:exception_classes].include?(err.class)
-        disconnect_on_error!
+        disconnect_on_error! if @error_count == error_count
 
         tries -= 1
         if tries > 0
           _handled_proxy(method_name, d, tries, *args)
         else
-          raise_or_errback_or_default(err, method_name, d)
+          handle_error(err, method_name, d)
         end
       else
-        raise_or_errback_or_default(err, method_name, d)
+        handle_error(err, method_name, d)
       end
     end
 
@@ -47,7 +61,7 @@ class EventMachineThriftClient < AbstractThriftClient
     end
   end
 
-  def raise_or_errback_or_default(e, method_name, d)
+  def handle_error(e, method_name, d)
     if @options[:raise]
       begin
         raise_wrapped_error(e)

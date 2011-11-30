@@ -21,11 +21,21 @@ module Greeter
       processor = Greeter::Processor.new(handler)
       transport = Thrift::ServerSocket.new("127.0.0.1", port)
       transportFactory = Thrift::FramedTransportFactory.new()
-      @server = Thrift::SimpleServer.new(processor, transport, transportFactory)
+      @server = server_class.new(processor, transport, transportFactory)
+    end
+
+    def server_class
+      Thrift::SimpleServer
     end
 
     def serve
       @server.serve()
+    end
+  end
+
+  class NonblockingServer < Server
+    def server_class
+      Thrift::NonblockingServer
     end
   end
 
