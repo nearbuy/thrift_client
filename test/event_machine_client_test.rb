@@ -253,4 +253,55 @@ class ThriftClientTest < Test::Unit::TestCase
     ], events )
     assert_equal( 1, disconnect_on_error_count )
   end
+
+  def test_multiple_methods_with_method_timeout
+    disconnect_on_error_count = 0
+    callback_count = 3
+
+    events = []
+
+    decr_cb_count = lambda do
+      callback_count -= 1
+      if callback_count == 0
+        EM.stop_event_loop
+      end
+    end
+
+    start_server!(@real_port + 1)
+
+    @options[:retries] = 2
+    @options[:timeout] = 0.6
+
+    EM.run do
+      client = EventMachineThriftClient.new(Async::Greeter::Client, live_servers, @options)
+      singleton_class = (class << client; self end)
+
+      singleton_class.send :define_method, :disconnect_on_error! do |*args|
+        disconnect_on_error_count += 1; super *args
+      end
+
+      mk_callbacks = lambda do |d, name|
+        [:callback, :errback].each do |cb_type|
+          d.send(cb_type) do
+            decr_cb_count.call
+            events << "#{cb_type} #{name}"
+          end
+        end
+      end
+
+      # this method call should fail, but not affect the other method calls
+      d = client.delayed_greeting("g1", 0.7)
+      mk_callbacks.call(d, "g1")
+
+      d = client.delayed_greeting("g2", 0.4)
+      mk_callbacks.call(d, "g2")
+      d.callback do
+        d = client.delayed_greeting("g3", 0.4)
+        mk_callbacks.call(d, "g3")
+      end
+    end
+
+    assert_equal( ["callback g2", "callback g3", "errback g1"], events )
+    assert_equal( 3, disconnect_on_error_count )
+  end
 end

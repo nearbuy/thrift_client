@@ -2,24 +2,60 @@ class EventMachineThriftClient < AbstractThriftClient
   # This class is works with the thrift core eventmachinetransport
   # not the other eventmachine class in thrift_client
 
+  class Connection < Thrift::EventMachineTransport
+    attr_reader :pending_requests
+    def initialize(args={})
+      @pending_requests = 0
+      @shutting_down = false
+      super
+    end
+
+    def incr_request
+      @pending_requests += 1
+    end
+
+    def decr_request
+      @pending_requests -= 1
+      if @shutting_down && @pending_requests == 0
+        close
+      end
+    end
+
+    def close
+      @shutting_down = true
+      if @pending_requests == 0
+        super
+      end
+    end
+  end
+
   def initialize(client_class, servers, options = {})
     @error_count = 0
+    @pending_shutdown_connections = []
     super
   end
 
   def connect!
+    cleanup_pending_connections
     @current_server = next_live_server
     host, port = @current_server.connection_string.split(':')
     raise ArgumentError, 'Servers must be in the form "host:port"' unless host and port
 
-    @connection = Thrift::EventMachineTransport.connect(@client_class, host, port)
+    @connection = Connection.connect(@client_class, host, port)
     @connection.set_pending_connect_timeout(@options[:connect_timeout])
     @connection.callback(&@callbacks[:post_connect]) if @callbacks[:post_connect]
   end
 
   private
 
+  def cleanup_pending_connections
+    @pending_shutdown_connections.delete_if {|con| con.pending_requests == 0}
+  end
+
   def disconnect_on_error!
+    if @connection.pending_requests > 0
+      @pending_shutdown_connections << @connection
+    end
     @error_count += 1
     super
   end
@@ -50,11 +86,16 @@ class EventMachineThriftClient < AbstractThriftClient
       connect!
       @connection.errback(&exception_handler)
     end
+    connection = @connection
     @connection.callback do |client|
-      @request_count += 1
+      connection.incr_request
       deferred = client.send(method_name, *args)
       deferred.errback(&exception_handler)
-      deferred.callback {|*args| d.succeed(*args) }
+      deferred.errback { connection.decr_request }
+      deferred.callback do |*args|
+        connection.decr_request
+        d.succeed(*args)
+      end
 
       timeout = @options[:timeout_overrides][method_name.to_sym] || @options[:timeout]
       deferred.timeout(timeout, :timeout)
